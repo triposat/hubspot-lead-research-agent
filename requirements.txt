@@ -1,0 +1,5 @@
+composio==0.25.0
+composio-client==2.0.0rc8
+anthropic>=1.13,<2
+python-dotenv>=1.0
+requests
