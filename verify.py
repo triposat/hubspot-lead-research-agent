@@ -11,6 +11,9 @@ def _tokens(text):
 
 
 SECOND_LEVEL = {"co", "com", "org", "net", "ac", "gov", "edu"}
+# A company name that is only a generic word, such as "Company", is not evidence on its own.
+GENERIC = {"company", "group", "labs", "solutions", "systems", "software", "technologies",
+           "global", "holdings", "partners", "ventures", "studio", "digital", "services"}
 
 
 def _label(domain):
@@ -35,7 +38,7 @@ def company_matches(email_domain, company_site, company_name):
     words = _tokens(company_name)
     squashed, domain = "".join(words), "".join(_tokens(email_domain.replace(".", " ")))
     # A whole word or the whole name must match, so meta.com doesn't match "Metabase".
-    return len(label) >= 4 and len(squashed) >= 4 and (
+    return len(label) >= 4 and len(squashed) >= 4 and squashed not in GENERIC and (
         label in words or squashed == domain or squashed in label)
 
 
