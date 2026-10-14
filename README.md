@@ -53,6 +53,6 @@ To measure the identity check on contacts you already know, fill a CSV with the 
 
 You can also set `POLL_SECONDS` (default 300), `CLAUDE_MODEL` (default `claude-opus-5-5`), `BRIGHTDATA_DATASET_SEARCH=on` for the Dataset Search fallback, after you add funds to your Bright Data account, and `AGENT_SEARCH=on` for the Claude search agent, which spends Claude tokens on each lead it runs for.
 
-## Responsible use
+## Handling lead data
 
-The agent collects public, logged-out data about people who contacted you. Review LinkedIn's terms and your privacy obligations, such as GDPR Article 14 for EU and UK leads, with your counsel before you run it. Only verified matches write LinkedIn fields to HubSpot.
+The agent stores public data about people who contacted you, and it writes LinkedIn fields to HubSpot only for verified matches. Post briefs to the lead owner rather than a shared channel when you can, and follow the privacy rules that apply to your leads, such as the GDPR.
