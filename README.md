@@ -1,88 +1,115 @@
 # Lead research agent for HubSpot
 
-The agent polls HubSpot through a Composio session, researches each new contact with Bright Data, checks that the LinkedIn profile belongs to the lead, writes a brief with Claude, and saves the results to HubSpot and Slack.
+Researches each new HubSpot lead, checks that the LinkedIn profile it finds belongs to that person, and sends the rep a short brief in Slack. It uses Composio for HubSpot and Slack, Bright Data for the LinkedIn and web data, and Claude for the brief.
 
-## Before you start
+## Requirements
 
-You need these accounts:
+- Python 3.10 or later. On Windows, use WSL.
+- A HubSpot account. The free CRM works.
+- A Composio project and API key.
+- A Bright Data API key and 2 zones, one for the SERP API and one for Web Unlocker.
+- An Anthropic API key.
+- A Slack channel for the briefs. The Slack account you connect must be a member of it.
 
-- **HubSpot.** The free CRM works. `connect.py` adds 5 custom contact properties.
-- **Composio.** A project and its API key, from **API Keys** in the Composio dashboard.
-- **Bright Data.** An API key and 2 zones, one for the SERP API and one for Web Unlocker, created under **Web Access** in the control panel. If a zone uses an IP allowlist, add the IP of the machine that runs the agent.
-- **Anthropic.** An API key for the brief.
-- **Slack.** Create the channel for the briefs, and make sure the Slack account you'll connect is a member of it.
-
-## Run it
-
-You need Python 3.10 or later. The commands are for macOS and Linux shells. On Windows, use WSL.
+## Install
 
 ```bash
+git clone https://github.com/triposat/hubspot-lead-research-agent
+cd hubspot-lead-research-agent
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-```
-
-With uv, run `uv venv` and `uv pip install -r requirements.txt` instead.
-
-Copy `.env.example` to `.env` and add your keys and settings. The scripts load it when they start, and variables already set in your shell take precedence:
-
-```bash
 cp .env.example .env
 ```
 
-Then connect HubSpot and Slack and create the 5 `ai_*` contact properties:
+With uv, use `uv venv` and `uv pip install -r requirements.txt` instead.
+
+## Configure
+
+Add your keys and settings to `.env`. Set `RESEARCH_SINCE` to the current time in UTC, so the agent skips contacts created before you start it. The scripts load `.env` when they start, and variables set in your shell take precedence.
+
+If a Bright Data zone uses an IP allowlist, add the IP of the machine that runs the agent.
+
+Optional settings:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `POLL_SECONDS` | `300` | How often the agent checks HubSpot for new contacts |
+| `CLAUDE_MODEL` | `claude-opus-5-5` | The model that writes the brief |
+| `BRIGHTDATA_DATASET_SEARCH` | `off` | `on` adds a Dataset Search fallback. Needs funds in your Bright Data account |
+| `AGENT_SEARCH` | `off` | `on` adds a Claude search agent for leads the first search misses. Uses more Claude tokens |
+
+## Connect HubSpot and Slack
 
 ```bash
 python connect.py
 ```
 
-To check the agent, create a test contact in HubSpot with a full name and a work email, wait about 10 seconds, and run 1 poll with `python agent.py --once`. If the first poll doesn't find the contact, run it again. Then start the poller:
+The script prints a Composio link for HubSpot and one for Slack. Approve both and press Enter. It then creates the 5 `ai_*` contact properties in HubSpot.
+
+## Run
+
+Test with one contact first. Create a contact in HubSpot with a full name and a work email, wait a few seconds, and run a single poll:
+
+```bash
+python agent.py --once
+```
+
+The brief appears in Slack and as a note on the contact. If the poll doesn't find the contact yet, run it again. Then start the agent:
 
 ```bash
 python agent.py
 ```
 
-To run from a scheduler instead, call `python agent.py --once` every 5 minutes, with a lock such as `flock -n` on Linux so that runs never overlap. For example, this crontab line, with `/path/to` replaced by the folder you cloned into:
+To run it from cron instead, poll every 5 minutes with a lock so that runs don't overlap. Replace `/path/to` with the folder you cloned into:
 
 ```bash
 */5 * * * * cd /path/to/hubspot-lead-research-agent && flock -n /tmp/lead-agent.lock .venv/bin/python agent.py --once >> agent.log 2>&1
-```
-
-To measure the identity check on contacts you already know, fill a CSV with the columns in `known_contacts.example.csv` and run `python evaluate.py known_contacts.csv`.
-
-After you change a rule in `verify.py`, run the offline tests. They need no API keys:
-
-```bash
-python -m unittest test_verify.py
 ```
 
 ## What the agent writes to HubSpot
 
 Each new contact gets an `ai_identity_check` value:
 
-- **`researching`** means a worker is still working on the contact. If the value stays after a crash, clear it to retry.
-- **`verified`** means the name and company matched a LinkedIn profile, and the agent wrote the LinkedIn fields.
-- **`job_change`** means a profile with the same name lists another company. The lead may have changed jobs, or it may be a different person, so confirm it.
+- **`researching`** means the research is still running. If the value stays after a crash, clear it to retry.
+- **`verified`** means the name and company matched a LinkedIn profile, so the LinkedIn fields are set.
+- **`job_change`** means a profile with the same name lists another company. Confirm whether the lead changed jobs or it's a different person.
 - **`unverified`** means there was no company to check against, because the lead used a personal email domain or the profile lists no current company.
-- **`no_match`** means the search found no LinkedIn profile with the lead's name, or the contact has no full name.
-- **`error`** means the research didn't finish. The terminal log shows why. If a search error ends in `ip_forbidden`, add this machine's IP to the zone's allowlist, then clear the field to retry.
+- **`no_match`** means no LinkedIn profile with the lead's name was found, or the contact has no full name.
+- **`error`** means the research didn't finish, and the terminal log shows why. For `ip_forbidden`, add this machine's IP to the zone's allowlist, then clear the field to retry.
 
-Every lead also gets a brief as a note on the contact and a post in the Slack channel.
+## Check accuracy
+
+`evaluate.py` runs the identity check on contacts whose LinkedIn profiles you already know. Put 20 to 50 of them in a CSV with the columns in `known_contacts.example.csv`, then run:
+
+```bash
+python evaluate.py known_contacts.csv
+```
+
+`test_verify.py` tests the matching rules offline, with no API keys. Run it after you change `verify.py`:
+
+```bash
+python -m unittest test_verify.py
+```
 
 ## Files
 
-- `connect.py` connects HubSpot and Slack through Composio and creates the HubSpot properties.
-- `agent.py` polls for new contacts, marks them as in progress, runs the research, and writes the results.
-- `webdata.py` wraps the Bright Data SERP API, Web Scraper API, Dataset Search API, and Web Unlocker.
-- `identify.py` runs the search, the identity check, and the optional fallbacks.
-- `search_agent.py` is the optional Claude search agent for leads the pipeline couldn't verify. It's imported only when `AGENT_SEARCH=on`.
-- `verify.py` decides whether a LinkedIn profile belongs to the lead.
-- `evaluate.py` measures the identity check on a CSV of contacts whose LinkedIn profiles you know.
-- `test_verify.py` tests the identity check rules offline.
-- `brief.py` writes the brief with Claude.
+| File | What it does |
+|---|---|
+| `connect.py` | Connects HubSpot and Slack through Composio and creates the HubSpot properties |
+| `agent.py` | Polls for new contacts, runs the research, and writes the results |
+| `identify.py` | Runs the LinkedIn search, the identity check, and the optional fallbacks |
+| `verify.py` | Decides whether a LinkedIn profile belongs to the lead |
+| `webdata.py` | Calls the Bright Data SERP API, Web Scraper API, Dataset Search API, and Web Unlocker |
+| `brief.py` | Writes the brief with Claude |
+| `search_agent.py` | The optional Claude search agent, loaded only when `AGENT_SEARCH=on` |
+| `evaluate.py` | Measures the identity check on contacts you know |
+| `test_verify.py` | Offline tests for `verify.py` |
 
-You can also set `POLL_SECONDS` (default 300), `CLAUDE_MODEL` (default `claude-opus-5-5`), `BRIGHTDATA_DATASET_SEARCH=on` for the Dataset Search fallback, after you add funds to your Bright Data account, and `AGENT_SEARCH=on` for the Claude search agent, which spends Claude tokens on each lead it runs for.
-
-## Handling lead data
+## Lead data
 
 The agent stores public data about people who contacted you, and it writes LinkedIn fields to HubSpot only for verified matches. Post briefs to the lead owner rather than a shared channel when you can, and follow the privacy rules that apply to your leads, such as the GDPR.
+
+## License
+
+MIT
